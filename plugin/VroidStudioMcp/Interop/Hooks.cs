@@ -49,6 +49,8 @@ public static class Hooks
         ("VRoid.Studio.EditRootScreen.ViewModel", "EnterToPhotoBooth"),
         ("VRoid.Studio.EditRootScreen.ViewModel", "EnterToVRMExport"),
         ("VRoid.Studio.EditRootScreen.ViewModel", "BackToModelSelect"),
+        ("VRoid.Studio.VRMExportScreen.ViewModel", "OnScreenActivate"),
+        ("VRoid.Studio.VRMExportScreen.ViewModel", "OnScreenDeactivate"),
         ("VRoid.Studio.ModelPresetsSelector.BasePresetsSelectorViewModel", "set_SelectedCategory"),
         ("VRoid.Studio.ModelPresetsSelector.BasePresetsSelectorViewModel", "UpdateSelectedPresets"),
         ("VRoid.Studio.ModelPresetsSelector.BasePresetsSelectorViewModel", "ShowSelectedItem"),
@@ -207,6 +209,13 @@ public static class Hooks
                 var it = TypeName(__instance) ?? "";
                 if (it.EndsWith("MainViewModel")) _mainViewModel = __instance;
                 else if (it.EndsWith("EditRootScreen.ViewModel")) _editRootVm = __instance;
+                else if (it.EndsWith("VRMExportScreen.ViewModel"))
+                {
+                    // Track the export screen so export_vrm can pop it; it must not count as
+                    // (re)entering the edit root below.
+                    _vrmExportVm = method == "OnScreenDeactivate" ? null : __instance;
+                    return;
+                }
                 else if (it == "VRoid.Studio.Engine.Model") _engineModel = __instance;
                 else if (it.EndsWith("AvatarEditor"))
                 {

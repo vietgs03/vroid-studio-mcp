@@ -38,6 +38,10 @@
       <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.CoreModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.AnimationModule">
+      <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.AnimationModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="UnityEngine.ImageConversionModule">
       <HintPath>$(GameDir)/BepInEx/interop/UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>

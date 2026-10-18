@@ -56,7 +56,7 @@ public static class CommandDispatcher
     {
         "save", "categories", "enter", "presets", "presets_full", "select_preset",
         "set_param", "label_set", "preset_preview_list", "preset_preview_range",
-        "camera", "screenshot",
+        "camera", "screenshot", "bones", "export_vrm",
     };
 
     public static Task<CommandResult> Submit(string method, string[] args)
@@ -136,6 +136,8 @@ public static class CommandDispatcher
         ["renderprobe"] = RenderHandlers.Probe,
         ["rendermaasa"] = RenderHandlers.Msaa,
         ["renderscale"] = RenderHandlers.Scale,
+        ["bones"] = SkeletonHandlers.Bones,
+        ["export_vrm"] = ExportHandlers.ExportVrm,
     };
 
     // Test hooks: run a core handler directly on the calling coroutine (no dispatcher queue).

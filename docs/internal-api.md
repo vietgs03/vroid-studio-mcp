@@ -434,17 +434,40 @@ operations transparent, `CommandDispatcher` accepts both host-POSIX (`/home/...`
   host paths (Wine → POSIX, otherwise Windows). A remote client is formally possible (the address is configurable),
   but the paths diverge and file commands are meaningless — this is not supported.
 
-## 15. VRM export (not implemented)
+## 15. VRM export (implemented in the fork: `export_vrm`)
 
-The only item of the original MVP that remained unwrapped externally. The engine entry points were found
-statically (addresses — of this build):
+Entry points (this build):
 
-- Transition to the export screen: `VRoid.Studio.EditRootScreen.ViewModel.EnterToVRMExport()` (opens
-  `VRMExportScreen`).
-- Screen: `VRoid.Studio.VRMExportScreen.ViewModel`.
-- Export engine: `VRoidStudio.Exporter.VRoidExporter`, `VRoidStudioExporterUtil`,
-  `VRoidStudio.Exporter.ExportAvatarContainer`.
-- Settings: `VRoidStudio.PhotoBooth.ExportSettings` (atlas, texture compression, reduction…).
+- Transition to the export screen: `VRoid.Studio.EditRootScreen.ViewModel.EnterToVRMExport()` pushes
+  `VRoid.Studio.VRMExportScreen.ViewModel` on `MainViewModel.screenNavigation`
+  (`VRoid.UI.ScreenNavigationViewModel`: `Push/Pop/ActiveScreen`). The screen VM is captured on its
+  `OnScreenActivate`/`OnScreenDeactivate` (hooked) and left with `ScreenWithCurrentFileViewModelBase.PopScreen()`.
+- The export work lives in the legacy PhotoBooth VM, reachable as
+  `EditRootScreen.ViewModel.obsoleteLegacyPhotoBoothViewModel`
+  (`VRoidStudio.GUI.AvatarEditor.PhotoBooth.PhotoBoothViewModel`). Entering the screen selects export mode and
+  builds the export preview avatar (`UmaGameObject`); `_isBlockingUpdateExportPreview` is true while it rebuilds.
+- The settings dialog ends in `OnVRM1SettingChanged(VRM10ObjectMeta meta)` /
+  `OnVRMSettingChanged(glTF_VRM_Meta meta)`, which open a save dialog and then call the **path overloads**
+  `OnVRM1SettingChanged(VRM10ObjectMeta, string path, TaskCompletionSource<bool>)` and
+  `OnVRMSettingChanged(glTF_VRM_Meta, string, TaskCompletionSource<bool>)`. The fork calls the path overload
+  directly (no dialog) and resolves on the completion source (`Task.IsCompleted` / `Result`).
+  Internally they run the coroutines `ExportVRM1/ExportVRM0(exportPath, meta, isEnableHairCombination,
+  shrinkTexture, MaterialReductionMode, runMeshOptimization, onSuccess, onFailure, onProgress)`.
+- Options come from `PhotoBoothViewModel.ExportSettings` (`VRoidStudio.PhotoBooth.ExportSettings`):
+  `CurrentMaterialReductionMode` (None/Low/Medium/High), `IsEnableHairCombination`,
+  `CurrentTextureCompressionMode`, `CurrentAtlasResolution`, `MeshReduction`, `hairBoneReduction`, and the
+  stored metas `VRM10MetaData` / `VRM0MetaData` (reused, required fields filled in).
+- Low-level exporter: `VRoidStudio.Exporter.VRoidExporter.ExportAsVRM1/ExportAsVRM0(GameObject, path, meta,
+  thumbnail, EyeExcursionParameters, removeBustSpringBone)` (not used: the PhotoBooth path also does the
+  atlas/reduction/hair-merge preparation).
 
-It is not yet exposed externally (command/MCP tool); implementing it will require opening the export screen,
-filling in `ExportSettings`, and waiting for the export to complete by signal — like other async operations.
+Measured on WSL2 + Windows: VRM 1.0 and VRM 0.x exports of the default female model take ~9-13 s and are
+~12 MB; the app returns to the editor with the model ready.
+
+## 16. Live skeleton (fork: `bones`)
+
+- The edited avatar is the humanoid `Animator` on the `CurrentModelOrigin` GameObject.
+  `Animator.GetBoneTransform(HumanBodyBones)` gives the humanoid bones (`J_Bip_*`).
+- The skinned meshes mostly bind the `J_Adj_*` helper bones (the renderer bone lists contain few `J_Bip_*`),
+  so the skeleton must be read through the Animator, not through `SkinnedMeshRenderer.bones`.
+- Body sliders move the bones after the async rebuild (`IsUpdatingModel true->false`); read after it settles.

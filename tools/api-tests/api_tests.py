@@ -183,7 +183,8 @@ class Harness:
 
         status, doc = self.mcp_rpc("tools/list", {})
         names = [t["name"] for t in doc["result"]["tools"]] if doc else []
-        for need in ("state", "sections", "open", "enter", "set_param", "screenshot", "exit", "batch", "help", "status"):
+        for need in ("state", "sections", "open", "enter", "set_param", "screenshot", "exit", "batch", "help", "status",
+                     "bones", "export_vrm"):
             self.check(f"tools-list.{need}", need in names)
 
         # status is answered out of the main-thread queue and reports queue depth
@@ -586,6 +587,88 @@ class Harness:
                 self.check(f"misuse.{nm}.element", False, repr(e)[:100])
         self.tcp_line("main_menu")
 
+    # ---------- fork: skeleton read-back + VRM export ----------
+    def _open_model(self):
+        self.ensure_model_select()
+        self.tool_ok("open", {"path": self.model})
+
+    def suite_skeleton(self):
+        print("[skeleton] bones read-back tracks Body sliders")
+        if not self.model:
+            self.info("skipped (pass --model)")
+            return
+        self.ensure_model_select()
+        err, text = self.tool_text("bones", {})
+        self.check("bones.rejected-at-select", err and "no model open" in text, text)
+        self._open_model()
+        b0 = json.loads(self.tool_ok("bones", {}))
+        need = ("hips", "neck", "head", "l_upper_leg", "l_lower_leg", "l_foot", "l_upper_arm", "l_hand", "r_upper_arm", "r_hand")
+        self.check("bones.core-present", all(k in b0["bones"] for k in need), sorted(b0["bones"]))
+        h = b0["heights"]
+        self.check("bones.order", 0 < h["ankle"] < h["knee"] < h["hips"] < h["neck"] < h["head"] < b0["mesh_height"], h)
+        self.check("bones.sym-shoulders", abs(b0["bones"]["l_upper_arm"][1] - b0["bones"]["r_upper_arm"][1]) < 1e-3)
+        self.tool_ok("set_param", {"section": "Body", "category": "Whole Body", "index": "Body/Whole Body/Leg Length", "value": "1"})
+        b1 = json.loads(self.tool_ok("bones", {}))
+        self.check("bones.leg-longer", b1["lengths"]["lower_leg"] > b0["lengths"]["lower_leg"] + 0.01,
+                   f'{b0["lengths"]["lower_leg"]} -> {b1["lengths"]["lower_leg"]}')
+        self.check("bones.hips-higher", b1["heights"]["hips"] > h["hips"] + 0.01, f'{h["hips"]} -> {b1["heights"]["hips"]}')
+        self.tool_ok("set_param", {"section": "Body", "category": "Whole Body", "index": "Body/Whole Body/Leg Length", "value": "0"})
+        b2 = json.loads(self.tool_ok("bones", {}))
+        self.check("bones.restored", abs(b2["heights"]["hips"] - h["hips"]) < 2e-3, f'{h["hips"]} vs {b2["heights"]["hips"]}')
+        ball = json.loads(self.tool_ok("bones", {"mode": "all"}))
+        self.check("bones.all", ball.get("bone_count", 0) > 50 and "J_Bip_L_Index1" in ball.get("all", {}), ball.get("bone_count"))
+        err, text = self.tool_text("bones", {"mode": "nope"})
+        self.check("bones.bad-mode", err and "core|all" in text, text)
+
+    def suite_export(self):
+        print("[export] export_vrm writes a valid VRM and returns to the editor")
+        if not self.model or not self.tmp_dir:
+            self.info("skipped (pass --model and --tmp-dir)")
+            return
+        import struct
+        self.ensure_model_select()
+        err, text = self.tool_text("export_vrm", {"path": host_path(os.path.join(self.tmp_dir, "x.vrm"))})
+        self.check("export.rejected-at-select", err and "no model open" in text, text)
+        self._open_model()
+        for name, args, needle in (
+            ("no-path", {}, "usage"),
+            ("bad-ext", {"path": host_path(os.path.join(self.tmp_dir, "x.txt"))}, ".vrm"),
+            ("bad-dir", {"path": host_path(os.path.join(self.tmp_dir, "no", "such", "x.vrm"))}, "directory does not exist"),
+            ("bad-format", {"path": host_path(os.path.join(self.tmp_dir, "x.vrm")), "format": "glb"}, "vrm1|vrm0"),
+        ):
+            err, text = self.tool_text("export_vrm", args)
+            self.check(f"export.{name}", err and needle in text, text)
+        for fmt in ("vrm1", "vrm0"):
+            local = os.path.join(self.tmp_dir, f"api_test_{fmt}.vrm")
+            t0 = time.time()
+            err, text = self.tool_text("export_vrm", {"path": host_path(local), "format": fmt, "name": "api-test", "author": "harness"},
+                                       timeout=max(self.timeout, 400))
+            self.check(f"export.{fmt}.ok", not err, text[:200])
+            if err:
+                continue
+            res = json.loads(text)
+            with open(local, "rb") as fh:
+                blob = fh.read()
+            magic, _ver, length = struct.unpack("<4sII", blob[:12])
+            self.check(f"export.{fmt}.glb", magic == b"glTF" and length == len(blob) == res["bytes"], (magic, length, len(blob)))
+            clen = struct.unpack("<I", blob[12:16])[0]
+            gltf = json.loads(blob[20:20 + clen])
+            ext = gltf.get("extensions", {})
+            if fmt == "vrm1":
+                meta = ext.get("VRMC_vrm", {}).get("meta", {})
+                self.check("export.vrm1.meta", meta.get("name") == "api-test" and meta.get("authors") == ["harness"], meta)
+                self.check("export.vrm1.humanoid", len(ext.get("VRMC_vrm", {}).get("humanoid", {}).get("humanBones", {})) >= 15)
+            else:
+                meta = ext.get("VRM", {}).get("meta", {})
+                self.check("export.vrm0.meta", meta.get("title") == "api-test" and meta.get("author") == "harness", meta)
+                self.check("export.vrm0.humanoid", len(ext.get("VRM", {}).get("humanoid", {}).get("humanBones", [])) >= 15)
+            st = self.tcp_state()
+            self.check(f"export.{fmt}.back-in-editor", st["in_edit"] and st["ready"], st)
+            self.info(f"{fmt}: {res['bytes']} bytes in {time.time() - t0:.1f}s")
+            os.unlink(local)
+        # the editor must still respond to edits and screenshots after an export
+        self.check("export.screenshot-after", bool(self.screenshot_sha()))
+
     SUITES = {
         "protocol": "suite_protocol",
         "tcp": "suite_tcp",
@@ -594,6 +677,8 @@ class Harness:
         "render": "suite_render",
         "stress": "suite_stress",
         "misuse": "suite_misuse",
+        "skeleton": "suite_skeleton",
+        "export": "suite_export",
     }
 
 

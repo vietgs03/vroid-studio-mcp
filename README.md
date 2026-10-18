@@ -13,6 +13,10 @@ control, while you keep working in VRoid Studio as usual.
   it (`.vroid`).
 - **Full editor control** — work through the editor as a person would: sections (`Face`,
   `Hairstyle`, `Body`, `Outfit`), categories, presets, and individual sliders/colors.
+- **Skeleton read-back** *(fork)* — `bones` returns the live humanoid skeleton (heights, segment
+  lengths, widths), so body proportions can be fitted numerically against a reference.
+- **VRM export** *(fork)* — `export_vrm` writes VRM 1.0 or 0.x through the editor's own exporter, with no
+  dialog.
 - **Live visual feedback** — the agent receives rendered previews of the model and preset
   thumbnails, so it decides by looking instead of guessing.
 - **High-quality preview render** — configurable MSAA and supersampling (SSAA) plus anisotropic

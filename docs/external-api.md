@@ -217,6 +217,24 @@ Custom presets are out of scope; only the stock `Presets` group (`SelectedItemGr
   `{index,total,method}`. Useful to recognize that a timed-out batch is still applying and avoid
   repeating it. No model required.
 
+## Skeleton and VRM export (fork)
+
+- **`bones [core|all]`** — read-only snapshot of the live avatar skeleton, taken after the model rebuild
+  settles. Returns `{floor_y, mesh_height, heights, lengths, widths, bones}` in Unity world metres (Y up):
+  `heights` are bone heights above the floor (= mesh bottom): `hips, upper_leg, knee, ankle, chest, neck,
+  head, eye, shoulder, hand`; `lengths` are joint distances (`upper_leg, lower_leg, upper_arm, lower_arm,
+  spine, neck`); `widths` are `shoulders` (upper arm joints) and `hips` (upper leg joints); `bones` maps 24
+  humanoid bones to `[x,y,z]`. `all` adds every `J_Bip_/J_Adj_/J_Sec_` transform (`bone_count`, `all`).
+  Intended loop for fitting Body sliders to a reference rig: `set_param` → `bones` → compare ratios
+  (e.g. `heights.hips / mesh_height`). Requires an open model.
+- **`export_vrm <path> [vrm1|vrm0] [name] [author] [version]`** — exports the current model with the editor's
+  own exporter and no dialog: it enters the VRM export screen, waits for the export preview, runs the export
+  and resolves on the exporter's completion source, then returns to the editor. `path` must end in `.vrm`
+  and its directory must exist (an existing file is overwritten). The VRM meta reuses the model's stored
+  meta, with `name` (default: file name), `author` and `version` applied. Options (material reduction, hair
+  merge, texture atlas) are the editor's current export settings and are echoed in `settings`. Returns
+  `{path, format, bytes, replaced_existing, seconds, settings}`. Requires an open model.
+
 ## Camera
 
 Subcommands: `reset`, `frame`, `angles`, `zoom`, `pan`, `projection`, `rotate`, `view`, `probe`.

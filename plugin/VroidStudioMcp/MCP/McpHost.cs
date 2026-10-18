@@ -1053,6 +1053,33 @@ public static class McpHost
               new[] { "mode" }, Array.Empty<string>(),
               new() { ["mode"] = EnumSchema("Whether to save before quitting.", "save", "discard") }),
 
+            T("bones",
+              "Read the live avatar skeleton (VRoid humanoid rig, J_Bip_* bones) after the model has finished " +
+              "rebuilding. Returns {floor_y, mesh_height, heights{hips,upper_leg,knee,ankle,chest,neck,head,shoulder,hand} " +
+              "(metres above the floor = mesh bottom), lengths{upper_leg,lower_leg,upper_arm,lower_arm,spine,neck}, " +
+              "widths{shoulders,hips}, bones{name:[x,y,z]}} in Unity world metres (Y up). Use it to fit Body sliders " +
+              "against a reference rig: set_param -> bones -> compare ratios (e.g. hips/mesh_height). mode='all' also " +
+              "returns every J_Bip_/J_Adj_/J_Sec_ bone (fingers, hair and skirt springs). Read-only. Requires an open model.",
+              new[] { "mode" }, Array.Empty<string>(),
+              new() { ["mode"] = EnumSchema("core (default) or all.", "core", "all") }),
+
+            T("export_vrm",
+              "Export the current model as a VRM file through the editor's own exporter, with no dialog. " +
+              "path: host path ending in .vrm (its directory must exist; an existing file is overwritten). " +
+              "format: vrm1 (default, VRM 1.0) or vrm0. name/author/version fill the VRM meta (name defaults to the " +
+              "file name). Uses the export options currently stored in the editor (material reduction, hair merge, " +
+              "texture atlas). BLOCKS for the whole export (typically 10-60 s), then returns to the editor. " +
+              "Returns {path, format, bytes, replaced_existing, seconds, settings}. Requires an open model.",
+              new[] { "path", "format", "name", "author", "version" }, new[] { "path" },
+              new()
+              {
+                  ["path"] = P("string", "Target .vrm path (e.g. C:\\Users\\user\\model.vrm)."),
+                  ["format"] = EnumSchema("vrm1 (default) or vrm0.", "vrm1", "vrm0"),
+                  ["name"] = P("string", "Avatar name in the VRM meta (default: file name)."),
+                  ["author"] = P("string", "Author in the VRM meta."),
+                  ["version"] = P("string", "Version string in the VRM meta."),
+              }),
+
             T("batch",
               "Run several operations sequentially in one call. operations: [{method, args:[...]}] where method " +
               "is any tool name (including help) and args is its positional argument list as strings, WITHOUT the " +

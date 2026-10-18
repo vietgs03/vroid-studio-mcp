@@ -13,6 +13,8 @@ public static class VroidState
     internal static object _mainViewModel;
     internal static object _editRootVm;
     internal static object _engineModel;
+    // The VRM export screen view model while it is on the navigation stack (captured on activate).
+    internal static object _vrmExportVm;
     private static object _mainActionHandler;
     internal static object _loadErrorDialog;
     internal static object _loadErrorProvider;
@@ -91,6 +93,7 @@ public static class VroidState
     {
         _inEdit = false; _modelReady = false; _modelUpdating = false;
         _editRootVm = null;
+        _vrmExportVm = null;
         _lastSavePath = null;
         _loadErrorDialog = null;
         _loadErrorProvider = null;

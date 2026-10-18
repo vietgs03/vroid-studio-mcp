@@ -19,11 +19,11 @@ Baseline on WSL2 + Windows: `tools/wsl-dev.sh test dev --model ...` → 146/146.
 
 ## Gaps that matter for an Onmyoji look (priority order)
 
-0. **Live skeleton read-back** (`bones` tool, cheapest and unblocks proportion fitting). Read the
+0. **Live skeleton read-back** — DONE (`bones`). Read the
    world positions of the humanoid bones (Hips, Upper/Lower Leg, Foot, Spine, Neck, Head, Upper/Lower
    Arm, Hand) straight from the live avatar's `Animator`, after `IsUpdatingModel` settles. Fitting the
    Body sliders to Shiranui then becomes set_param → bones → compare, with no export round-trip.
-1. **VRM export** (blocks the Blender hand-off). Engine entry points are known
+1. **VRM export** — DONE (`export_vrm`, VRM 1.0 + 0.x, no dialog; see `internal-api.md` §15). Engine entry points are known
    (`docs/internal-api.md` §15): `EditRootScreen.ViewModel.EnterToVRMExport()`,
    `VRMExportScreen.ViewModel`, `VRoidStudio.Exporter.VRoidExporter`, `ExportSettings`.
    Interop also exposes `ExportVrm`, `ExportToPath`, `ExportWithNoDialogNoSplit`. Plan: a blocking
