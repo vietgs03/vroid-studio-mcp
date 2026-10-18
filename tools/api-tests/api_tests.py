@@ -38,14 +38,31 @@ class Fail(Exception):
     pass
 
 
+def host_path(path):
+    """Translate a local path to one the app can open.
+
+    Under Wine the plugin maps Linux paths itself. Under WSL the app is a native Windows process,
+    so a Linux path must be converted with wslpath (only paths on a Windows drive are reachable).
+    """
+    if not os.environ.get("WSL_DISTRO_NAME") or not path.startswith("/"):
+        return path
+    try:
+        import subprocess
+        return subprocess.run(["wslpath", "-w", path], check=True, capture_output=True, text=True).stdout.strip()
+    except Exception:
+        return path
+
+
 class Harness:
-    def __init__(self, tcp, mcp, model, timeout, verbose=False):
+    def __init__(self, tcp, mcp, model, timeout, verbose=False, tmp_dir=None):
         self.tcp_host, self.tcp_port = tcp.rsplit(":", 1)
         self.tcp_port = int(self.tcp_port)
         self.mcp = mcp
         self.model = model
         self.timeout = timeout
         self.verbose = verbose
+        # Must be visible to the app: under WSL that means a Windows drive (see --tmp-dir).
+        self.tmp_dir = tmp_dir
         self.passed = 0
         self.failed = 0
         self._id = 0
@@ -382,11 +399,11 @@ class Harness:
 
         # failed open: fast + session recoverable
         self.ensure_model_select()
-        fd, bad = tempfile.mkstemp(suffix=".vroid")
+        fd, bad = tempfile.mkstemp(suffix=".vroid", dir=self.tmp_dir)
         os.write(fd, b"not a vroid model\n")
         os.close(fd)
         t0 = time.time()
-        err, text = self.tool_text("open", {"path": bad}, timeout=max(self.timeout, 30))
+        err, text = self.tool_text("open", {"path": host_path(bad)}, timeout=max(self.timeout, 30))
         dt = time.time() - t0
         self.check("failed-open.error", err and "failed to load" in text, text)
         self.check("failed-open.fast", dt < 5.0, f"{dt:.2f}s")
@@ -589,6 +606,8 @@ def main():
     ap.add_argument("--timeout", type=float, default=30.0)
     ap.add_argument("--list", action="store_true", help="list suites and exit")
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--tmp-dir", default=None,
+                    help="directory for scratch files the app must open (WSL: a /mnt/<drive> path)")
     args = ap.parse_args()
 
     if args.list:
@@ -600,7 +619,7 @@ def main():
         print("--model is required (a .vroid path; pass '' to skip the render suite)", file=sys.stderr)
         return 2
 
-    h = Harness(args.tcp, args.mcp, args.model, args.timeout, args.verbose)
+    h = Harness(args.tcp, args.mcp, args.model, args.timeout, args.verbose, args.tmp_dir)
 
     # fail fast if the endpoints are not up
     try:
