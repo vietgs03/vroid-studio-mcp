@@ -19,6 +19,10 @@ Baseline on WSL2 + Windows: `tools/wsl-dev.sh test dev --model ...` → 146/146.
 
 ## Gaps that matter for an Onmyoji look (priority order)
 
+0. **Live skeleton read-back** (`bones` tool, cheapest and unblocks proportion fitting). Read the
+   world positions of the humanoid bones (Hips, Upper/Lower Leg, Foot, Spine, Neck, Head, Upper/Lower
+   Arm, Hand) straight from the live avatar's `Animator`, after `IsUpdatingModel` settles. Fitting the
+   Body sliders to Shiranui then becomes set_param → bones → compare, with no export round-trip.
 1. **VRM export** (blocks the Blender hand-off). Engine entry points are known
    (`docs/internal-api.md` §15): `EditRootScreen.ViewModel.EnterToVRMExport()`,
    `VRMExportScreen.ViewModel`, `VRoidStudio.Exporter.VRoidExporter`, `ExportSettings`.
@@ -43,8 +47,9 @@ Baseline on WSL2 + Windows: `tools/wsl-dev.sh test dev --model ...` → 146/146.
 `OnmyojiModel3D/qx5/shiranui_measure.json` holds bone positions from the game rig (height ≈ 1.65 m
 to the head bone, pelvis 1.12, knee 0.75, ankle 0.27, shoulder span 0.23, arm reach 0.55). The Body
 sliders are normalised (-1..1) with no units, so the mapping is done by measurement, not by formula:
-export a VRM (gap 1), read bone positions in Blender, fit each slider by bisection against the
-Shiranui ratios (leg/height, head/height, shoulder/height, arm/height). This needs gap 1 first.
+read the live skeleton (gap 0) and fit each slider by bisection against the Shiranui ratios
+(leg/height, head/height, shoulder/height, arm/height). The sliders interact (Body Size scales
+everything), so fit Height/Body Size first, then the per-limb ratios.
 
 ## Dev loop
 
