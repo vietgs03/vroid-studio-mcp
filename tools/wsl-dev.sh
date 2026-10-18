@@ -29,12 +29,20 @@ tcp_of()  { case "${1:-dev}" in prod) echo 17890;; *) echo 17892;; esac; }
 mcp_of()  { case "${1:-dev}" in prod) echo 17891;; *) echo 17893;; esac; }
 win()     { wslpath -w "$1"; }
 
-# PIDs of VRoidStudio.exe whose image lives in the given install dir.
+# PIDs of VRoidStudio.exe whose image lives in the given install dir (may include instances started
+# before the plugin was installed, which never bind the control ports).
 pids_of() {
     local exe; exe="$(win "$1")\\VRoidStudio.exe"
     powershell.exe -NoProfile -Command \
         "Get-Process VRoidStudio -ErrorAction SilentlyContinue | Where-Object { \$_.Path -eq '$exe' } | ForEach-Object { \$_.Id }" \
         | tr -d '\r'
+}
+
+# PID of the instance that serves the target's TCP control port (the one with the plugin loaded).
+plugin_pid() {
+    powershell.exe -NoProfile -Command \
+        "(Get-NetTCPConnection -LocalAddress 127.0.0.1 -LocalPort $(tcp_of "$1") -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1).OwningProcess" \
+        | tr -d '\r' | grep -E '^[0-9]+$' || true
 }
 
 tcp_cmd() { # tcp_cmd <port> <line>
@@ -75,8 +83,9 @@ cmd_build() {
 cmd_deploy() {
     local t="${1:-dev}" d; d="$(dir_of "$t")"
     [[ -f "$DLL" ]] || { echo "build first" >&2; exit 1; }
-    if [[ -n "$(pids_of "$d")" ]]; then echo "$t is running; stop it first (the dll is locked)" >&2; exit 1; fi
-    cp "$DLL" "$d/BepInEx/plugins/VroidStudioMcp.dll"
+    # Only an instance that loaded the plugin locks the dll; it is the one bound to the control port.
+    if [[ -n "$(plugin_pid "$t")" ]]; then echo "$t plugin instance is running (pid $(plugin_pid "$t")); stop it first" >&2; exit 1; fi
+    if ! cp "$DLL" "$d/BepInEx/plugins/VroidStudioMcp.dll"; then echo "copy failed (dll locked by another instance?)" >&2; exit 1; fi
     mkdir -p "$d/i18n" "$d/labels"
     cp "$repo"/data/i18n/*.json "$d/i18n/"
     cp "$repo"/data/labels/*.json "$d/labels/"
@@ -85,24 +94,32 @@ cmd_deploy() {
 
 cmd_start() {
     local t="${1:-dev}" d; d="$(dir_of "$t")"
-    if [[ -n "$(pids_of "$d")" ]]; then echo "$t already running"; return 0; fi
+    if [[ -n "$(plugin_pid "$t")" ]]; then echo "$t already running (pid $(plugin_pid "$t"))"; return 0; fi
     powershell.exe -NoProfile -Command \
         "Start-Process -FilePath '$(win "$d")\\VRoidStudio.exe' -WorkingDirectory '$(win "$d")'" >/dev/null
     echo "started $t"
 }
 
 cmd_stop() {
-    local t="${1:-dev}" d; d="$(dir_of "$t")"
-    [[ -n "$(pids_of "$d")" ]] || { echo "$t not running"; return 0; }
+    local t="${1:-dev}" pid; pid="$(plugin_pid "$t")"
+    [[ -n "$pid" ]] || { echo "$t not running"; return 0; }
+    # Refuse to drop unsaved edits: an instance with a model open must be saved/sent to the menu first.
+    if [[ "$(tcp_cmd "$(tcp_of "$t")" state 2>/dev/null)" == *'"in_edit":true'* && "${FORCE:-0}" != 1 ]]; then
+        echo "$t has a model open; save it or call main_menu first (or FORCE=1 to discard)" >&2; return 1
+    fi
     tcp_cmd "$(tcp_of "$t")" "exit discard" || true
-    for _ in $(seq 1 30); do [[ -z "$(pids_of "$d")" ]] && { echo "stopped $t"; return 0; }; sleep 1; done
-    echo "$t did not exit within 30s; not force-killing (unsaved work?)" >&2; return 1
+    for _ in $(seq 1 30); do
+        powershell.exe -NoProfile -Command "if (Get-Process -Id $pid -ErrorAction SilentlyContinue) { 'up' }" | grep -q up \
+            || { echo "stopped $t (pid $pid)"; return 0; }
+        sleep 1
+    done
+    echo "$t (pid $pid) did not exit within 30s; not force-killing" >&2; return 1
 }
 
 cmd_status() {
     local t="${1:-dev}" d; d="$(dir_of "$t")"
     echo "target=$t dir=$d"
-    echo "pids: $(pids_of "$d" | tr '\n' ' ')"
+    echo "app pids: $(pids_of "$d" | tr '\n' ' ')  plugin pid: $(plugin_pid "$t")"
     tcp_cmd "$(tcp_of "$t")" state 2>/dev/null || echo "tcp $(tcp_of "$t"): down"
     curl -s -m 5 -X POST "http://127.0.0.1:$(mcp_of "$t")/mcp" -H 'Content-Type: application/json' \
         -d '{"jsonrpc":"2.0","id":1,"method":"ping"}' || echo "mcp $(mcp_of "$t"): down"
