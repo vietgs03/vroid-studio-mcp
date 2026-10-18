@@ -67,6 +67,32 @@ public static class Skeleton
         Math.Round(v.x, 4), Math.Round(v.y, 4), Math.Round(v.z, 4),
     };
 
+    /// <summary>World-space Y and X extent of a skinned mesh in its current pose (BakeMesh).</summary>
+    private static bool BakedRange(UnityEngine.SkinnedMeshRenderer r, out float ymin, out float ymax, out float xmin, out float xmax)
+    {
+        ymin = xmin = float.MaxValue; ymax = xmax = float.MinValue;
+        var mesh = new UnityEngine.Mesh();
+        try
+        {
+            r.BakeMesh(mesh, true);
+            var verts = mesh.vertices;
+            if (verts == null || verts.Length == 0) return false;
+            var tr = r.transform;
+            var pos = tr.position;
+            var rot = tr.rotation;
+            for (int i = 0; i < verts.Length; i++)
+            {
+                var w = pos + rot * verts[i];
+                if (w.y < ymin) ymin = w.y;
+                if (w.y > ymax) ymax = w.y;
+                if (w.x < xmin) xmin = w.x;
+                if (w.x > xmax) xmax = w.x;
+            }
+            return true;
+        }
+        finally { UnityEngine.Object.Destroy(mesh); }
+    }
+
     private static double Dist(UnityEngine.Transform a, UnityEngine.Transform b) =>
         a == null || b == null ? double.NaN : Math.Round(UnityEngine.Vector3.Distance(a.position, b.position), 4);
 
@@ -91,6 +117,37 @@ public static class Skeleton
         bool hasBounds = CameraApi.TryGetAvatarBounds(out var bounds);
         if (hasBounds) { floor = bounds.min.y; top = bounds.max.y; }
 
+        // Renderer bounds are padded approximations (on the default model the floor read -2 cm and the
+        // head top +2.4 cm off). Measure on the skinned vertices instead (BakeMesh): exact for the
+        // current pose and sliders, ~0.2 s for the whole avatar.
+        double headTop = double.NaN, headWidth = double.NaN, chin = double.NaN;
+        try
+        {
+            float bmin = float.MaxValue, bmax = float.MinValue, skullTop = float.MinValue, faceMin = float.MaxValue;
+            float hxMin = float.MaxValue, hxMax = float.MinValue;
+            var smrs = anim.GetComponentsInChildren<UnityEngine.SkinnedMeshRenderer>(false);
+            foreach (var o in Enumerate(smrs))
+            {
+                if (o is not UnityEngine.SkinnedMeshRenderer r || !r.enabled) continue;
+                if (!BakedRange(r, out var ymin, out var ymax, out var xmin, out var xmax)) continue;
+                bmin = Math.Min(bmin, ymin); bmax = Math.Max(bmax, ymax);
+                if (r.name == "Head" || r.name == "Face")
+                {
+                    skullTop = Math.Max(skullTop, ymax);
+                    hxMin = Math.Min(hxMin, xmin); hxMax = Math.Max(hxMax, xmax);
+                }
+                if (r.name == "Face") faceMin = Math.Min(faceMin, ymin);
+            }
+            if (bmax > bmin)
+            {
+                floor = bmin; top = bmax; hasBounds = true;
+                if (skullTop > float.MinValue) headTop = Math.Round(skullTop - floor, 4);
+                if (hxMax > hxMin) headWidth = Math.Round(hxMax - hxMin, 4);
+                if (faceMin < float.MaxValue) chin = Math.Round(faceMin - floor, 4);
+            }
+        }
+        catch (Exception e) { PluginLog.LogWarning($"bones: baked measurement failed, using bounds: {e.Message}"); }
+
         var core = new Dictionary<string, object>();
         foreach (var (bone, name) in Core)
         {
@@ -110,6 +167,8 @@ public static class Skeleton
             ["chest"] = H(UnityEngine.HumanBodyBones.Chest),
             ["neck"] = H(UnityEngine.HumanBodyBones.Neck),
             ["head"] = H(UnityEngine.HumanBodyBones.Head),
+            ["head_top"] = headTop,
+            ["chin"] = chin,
             ["eye"] = H(UnityEngine.HumanBodyBones.LeftEye),
             ["shoulder"] = H(UnityEngine.HumanBodyBones.LeftUpperArm),
             ["hand"] = H(UnityEngine.HumanBodyBones.LeftHand),
@@ -129,6 +188,7 @@ public static class Skeleton
         {
             ["shoulders"] = Dist(B(UnityEngine.HumanBodyBones.LeftUpperArm), B(UnityEngine.HumanBodyBones.RightUpperArm)),
             ["hips"] = Dist(B(UnityEngine.HumanBodyBones.LeftUpperLeg), B(UnityEngine.HumanBodyBones.RightUpperLeg)),
+            ["head"] = headWidth,
         };
 
         var result = new Dictionary<string, object>

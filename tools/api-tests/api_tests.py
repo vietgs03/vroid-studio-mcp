@@ -607,6 +607,17 @@ class Harness:
         h = b0["heights"]
         self.check("bones.order", 0 < h["ankle"] < h["knee"] < h["hips"] < h["neck"] < h["head"] < b0["mesh_height"], h)
         self.check("bones.sym-shoulders", abs(b0["bones"]["l_upper_arm"][1] - b0["bones"]["r_upper_arm"][1]) < 1e-3)
+        self.check("bones.head-landmarks", h["neck"] < h["chin"] < h["eye"] < h["head_top"] <= b0["mesh_height"] + 1e-3,
+                   {k: h[k] for k in ("neck", "chin", "eye", "head_top")})
+        self.tool_ok("set_param", {"section": "Body", "category": "Whole Body", "index": "Body/Whole Body/Head Size", "value": "1"})
+        bh = json.loads(self.tool_ok("bones", {}))
+        self.tool_ok("set_param", {"section": "Body", "category": "Whole Body", "index": "Body/Whole Body/Head Size", "value": "-1"})
+        bl = json.loads(self.tool_ok("bones", {}))
+        skull = lambda b: b["heights"]["head_top"] - b["heights"]["chin"]
+        # Head Size +1 is a chibi head (~2.8x skull height on the default model), -1 a smaller one.
+        self.check("bones.head-size-tracks", skull(bl) < skull(b0) * 0.97 and skull(bh) > skull(b0) * 1.5,
+                   f"skull -1:{skull(bl):.3f} 0:{skull(b0):.3f} +1:{skull(bh):.3f}")
+        self.tool_ok("set_param", {"section": "Body", "category": "Whole Body", "index": "Body/Whole Body/Head Size", "value": "0"})
         self.tool_ok("set_param", {"section": "Body", "category": "Whole Body", "index": "Body/Whole Body/Leg Length", "value": "1"})
         b1 = json.loads(self.tool_ok("bones", {}))
         self.check("bones.leg-longer", b1["lengths"]["lower_leg"] > b0["lengths"]["lower_leg"] + 0.01,
